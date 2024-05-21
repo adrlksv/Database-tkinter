@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import mysql.connector
+import re
 
 class App:
     def __init__(self, root):
@@ -143,7 +144,8 @@ class App:
         self.address_entry.grid(row=2, column=1, padx=5, pady=5)
 
         ttk.Label(self.add_window, text="Телефон").grid(row=3, column=0, padx=5, pady=5)
-        self.phone_number_entry = ttk.Entry(self.add_window)
+        vcmd = (self.add_window.register(self.validate_phone_number), '%P')
+        self.phone_number_entry = ttk.Entry(self.add_window, validate="key", validatecommand=vcmd)
         self.phone_number_entry.grid(row=3, column=1, padx=5, pady=5)
 
         ttk.Label(self.add_window, text="Код города").grid(row=4, column=0, padx=5, pady=5)
@@ -158,6 +160,9 @@ class App:
         city_code = self.city_codes.get(city, "")
         self.city_code_combo.set(city_code)
 
+    def validate_phone_number(self, phone_number):
+        return re.match(r'^[\d\+\-]*$', phone_number) is not None
+
     def submit_counterparty(self):
         appellation = self.appellation_entry.get()
         city = self.city_combo.get()
@@ -171,7 +176,7 @@ class App:
             messagebox.showerror("Ошибка", "Пожалуйста, выберите город из предложенных, контрагенты могут находиться на данный момент только в предложенных городах, расширение пока не планируется.")
             return
         if existing_city_code != city_code:
-            messagebox.showerror("Ошибка", "Выберите верный код города для выбранного вами города")
+            messagebox.showerror("Ошибка", "Выберите верный код города для существующего города")
             return
 
         # Добавление контрагента
