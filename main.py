@@ -10,6 +10,7 @@ class App:
 
         self.create_widgets()
         self.load_city_codes()
+        self.execute_query()  # Выполнить запрос "Вывести всех контрагентов" при запуске
 
     def create_widgets(self):
         # Верхняя панель для ввода запросов
@@ -81,6 +82,9 @@ class App:
 
     def execute_query(self):
         query_text = self.query_combo.get()
+        if not query_text:
+            query_text = "Вывести всех контрагентов"
+
         queries = {
             "Вывести уникальные города контрагентов": ("SELECT DISTINCT city FROM counterparties;", ["Город"]),
             "Вывести всех контрагентов": ("SELECT appellation AS Name, city AS City, address AS Address, phone_number AS Phone, city_code AS CityCode FROM counterparties;", 
@@ -129,6 +133,9 @@ class App:
     def add_counterparty(self):
         self.add_window = tk.Toplevel(self.root)
         self.add_window.title("Добавить контрагента")
+
+        self.add_window.grab_set()  # Сделать окно модальным
+        self.add_window.resizable(False, False)  # Запретить изменение размеров окна
 
         ttk.Label(self.add_window, text="Название").grid(row=0, column=0, padx=5, pady=5)
         self.appellation_entry = ttk.Entry(self.add_window)
@@ -244,3 +251,5 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = App(root)
     root.mainloop()
+
+   
