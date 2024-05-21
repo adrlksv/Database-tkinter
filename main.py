@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import mysql.connector
+import re
 
 class App:
     def __init__(self, root):
@@ -72,6 +73,7 @@ class App:
             result = cursor.fetchall()
             self.city_codes = {row[1]: row[0] for row in result}  # Словарь {город: код города}
             self.city_code_options = [f"{row[0]} - {row[1]}" for row in result]  # Список строк вида "код города - город"
+            self.city_names = list(self.city_codes.keys())  # Список городов
             cursor.close()
             connection.close()
         except mysql.connector.Error as err:
@@ -133,15 +135,17 @@ class App:
         self.appellation_entry.grid(row=0, column=1, padx=5, pady=5)
 
         ttk.Label(self.add_window, text="Город").grid(row=1, column=0, padx=5, pady=5)
-        self.city_entry = ttk.Entry(self.add_window)
-        self.city_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.city_combo = ttk.Combobox(self.add_window, values=self.city_names)
+        self.city_combo.grid(row=1, column=1, padx=5, pady=5)
+        self.city_combo.bind("<<ComboboxSelected>>", self.update_city_code)  # Обновление кода города при выборе
 
         ttk.Label(self.add_window, text="Адрес").grid(row=2, column=0, padx=5, pady=5)
         self.address_entry = ttk.Entry(self.add_window)
         self.address_entry.grid(row=2, column=1, padx=5, pady=5)
 
         ttk.Label(self.add_window, text="Телефон").grid(row=3, column=0, padx=5, pady=5)
-        self.phone_number_entry = ttk.Entry(self.add_window)
+        vcmd = (self.add_window.register(self.validate_phone_number), '%P')
+        self.phone_number_entry = ttk.Entry(self.add_window, validate="key", validatecommand=vcmd)
         self.phone_number_entry.grid(row=3, column=1, padx=5, pady=5)
 
         ttk.Label(self.add_window, text="Код города").grid(row=4, column=0, padx=5, pady=5)
@@ -151,45 +155,29 @@ class App:
         self.add_submit_button = ttk.Button(self.add_window, text="Добавить", command=self.submit_counterparty)
         self.add_submit_button.grid(row=5, column=0, columnspan=2, pady=10)
 
+    def update_city_code(self, event):
+        city = self.city_combo.get()
+        city_code = self.city_codes.get(city, "")
+        self.city_code_combo.set(city_code)
+
+    def validate_phone_number(self, phone_number):
+        return re.match(r'^[\d\+\-]*$', phone_number) is not None
+
     def submit_counterparty(self):
         appellation = self.appellation_entry.get()
-        city = self.city_entry.get()
+        city = self.city_combo.get()
         address = self.address_entry.get()
         phone_number = self.phone_number_entry.get()
         city_code = self.city_code_combo.get().split(' - ')[0] if ' - ' in self.city_code_combo.get() else self.city_code_combo.get()
 
         # Проверка существования города и кода города
         existing_city_code = self.city_codes.get(city)
-        if existing_city_code:
-            if existing_city_code != city_code:
-                messagebox.showerror("Ошибка", "Выберите верный код города для существующего города")
-                return
-        else:
-            # Проверка на существование нового кода города
-            if city_code in self.city_codes.values():
-                messagebox.showerror("Ошибка", "Код города уже существует для другого города")
-                return
-            # Добавление нового города в таблицу cities
-            try:
-                connection = mysql.connector.connect(
-                    host='localhost',
-                    user='root',
-                    password='Sexy163123',
-                    database='counterparties1'
-                )
-                cursor = connection.cursor()
-                query = "INSERT INTO cities (city_code, city_name) VALUES (%s, %s)"
-                values = (city_code, city)
-                cursor.execute(query, values)
-                connection.commit()
-                cursor.close()
-                connection.close()
-                self.city_codes[city] = city_code  # Обновление словаря городов
-                self.city_code_options.append(f"{city_code} - {city}")  # Обновление списка для Combobox
-                self.city_code_combo['values'] = self.city_code_options  # Обновление значений Combobox
-            except mysql.connector.Error as err:
-                messagebox.showerror("Ошибка", f"Ошибка добавления города: {err}")
-                return
+        if not existing_city_code:
+            messagebox.showerror("Ошибка", "Пожалуйста, выберите город из предложенных, контрагенты могут находиться на данный момент только в предложенных городах, расширение пока не планируется.")
+            return
+        if existing_city_code != city_code:
+            messagebox.showerror("Ошибка", "Выберите верный код города для существующего города")
+            return
 
         # Добавление контрагента
         try:
