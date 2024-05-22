@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import mysql.connector
+import re
 
 class App:
     def __init__(self, root):
@@ -9,6 +10,8 @@ class App:
 
         self.create_widgets()
         self.load_city_codes()
+        self.load_counterparty_types()
+        self.execute_query()  # Выполнить запрос "Вывести всех контрагентов" при запуске
 
     def create_widgets(self):
         # Верхняя панель для ввода запросов
@@ -21,7 +24,8 @@ class App:
             "Вывести контрагентов с городами",
             "Вывести контрагентов из Москвы",
             "Вывести контрагентов из того же города, что и контрагент с номером 2",
-            "Вывести всех поставщиков"
+            "Вывести всех поставщиков",
+            "Вывести типы контрагентов"  # Новый запрос
         ], state="readonly")  # Запрет на ручной ввод
         self.query_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
@@ -72,13 +76,34 @@ class App:
             result = cursor.fetchall()
             self.city_codes = {row[1]: row[0] for row in result}  # Словарь {город: код города}
             self.city_code_options = [f"{row[0]} - {row[1]}" for row in result]  # Список строк вида "код города - город"
+            self.city_names = list(self.city_codes.keys())  # Список городов
             cursor.close()
             connection.close()
         except mysql.connector.Error as err:
             messagebox.showerror("Ошибка", f"Ошибка загрузки кодов городов: {err}")
 
+    def load_counterparty_types(self):
+        try:
+            connection = mysql.connector.connect(
+                host='localhost',
+                user='root',
+                password='Sexy163123',
+                database='counterparties1'
+            )
+            cursor = connection.cursor()
+            cursor.execute("SELECT DISTINCT type_counterparty FROM types_of_counterparties")
+            result = cursor.fetchall()
+            self.counterparty_types = [row[0] for row in result]  # Список типов контрагентов
+            cursor.close()
+            connection.close()
+        except mysql.connector.Error as err:
+            messagebox.showerror("Ошибка", f"Ошибка загрузки типов контрагентов: {err}")
+
     def execute_query(self):
         query_text = self.query_combo.get()
+        if not query_text:
+            query_text = "Вывести всех контрагентов"
+
         queries = {
             "Вывести уникальные города контрагентов": ("SELECT DISTINCT city FROM counterparties;", ["Город"]),
             "Вывести всех контрагентов": ("SELECT appellation AS Name, city AS City, address AS Address, phone_number AS Phone, city_code AS CityCode FROM counterparties;", 
@@ -90,7 +115,8 @@ class App:
             "Вывести контрагентов из того же города, что и контрагент с номером 2": ("SELECT appellation, city, address, phone_number, city_code FROM counterparties WHERE city IN (SELECT city FROM counterparties WHERE serial_number = '2');", 
                                                                                     ["Название", "Город", "Адрес", "Телефон", "Код города"]),
             "Вывести всех поставщиков": ("SELECT c.appellation, c.city, c.address, c.phone_number, t.type_counterparty FROM counterparties c JOIN types_of_counterparties t ON c.serial_number = t.serial_number WHERE t.type_counterparty = 'Поставщик';", 
-                                         ["Название", "Город", "Адрес", "Телефон", "Тип контрагента"])
+                                         ["Название", "Город", "Адрес", "Телефон", "Тип контрагента"]),
+            "Вывести типы контрагентов": ("SELECT type_code, type_counterparty, serial_number FROM types_of_counterparties;", ["Код типа", "Тип контрагента", "Серийный номер"])  # Новый запрос
         }
         query, columns = queries.get(query_text, (None, None))
         if not query:
@@ -125,73 +151,68 @@ class App:
             messagebox.showerror("Ошибка", f"Ошибка подключения к базе данных: {err}")
 
     def add_counterparty(self):
+        self.load_counterparty_types()  # Загрузить типы контрагентов
+
         self.add_window = tk.Toplevel(self.root)
         self.add_window.title("Добавить контрагента")
+
+        self.add_window.grab_set()  # Сделать окно модальным
+        self.add_window.resizable(False, False)  # Запретить изменение размеров окна
 
         ttk.Label(self.add_window, text="Название").grid(row=0, column=0, padx=5, pady=5)
         self.appellation_entry = ttk.Entry(self.add_window)
         self.appellation_entry.grid(row=0, column=1, padx=5, pady=5)
 
         ttk.Label(self.add_window, text="Город").grid(row=1, column=0, padx=5, pady=5)
-        self.city_entry = ttk.Entry(self.add_window)
-        self.city_entry.grid(row=1, column=1, padx=5, pady=5)
+        self.city_combo = ttk.Combobox(self.add_window, values=self.city_names)
+        self.city_combo.grid(row=1, column=1, padx=5, pady=5)
+        self.city_combo.bind("<<ComboboxSelected>>", self.update_city_code)  # Обновление кода города при выборе
 
         ttk.Label(self.add_window, text="Адрес").grid(row=2, column=0, padx=5, pady=5)
         self.address_entry = ttk.Entry(self.add_window)
         self.address_entry.grid(row=2, column=1, padx=5, pady=5)
 
         ttk.Label(self.add_window, text="Телефон").grid(row=3, column=0, padx=5, pady=5)
-        self.phone_number_entry = ttk.Entry(self.add_window)
+        vcmd = (self.add_window.register(self.validate_phone_number), '%P')
+        self.phone_number_entry = ttk.Entry(self.add_window, validate="key", validatecommand=vcmd)
         self.phone_number_entry.grid(row=3, column=1, padx=5, pady=5)
 
         ttk.Label(self.add_window, text="Код города").grid(row=4, column=0, padx=5, pady=5)
         self.city_code_combo = ttk.Combobox(self.add_window, values=self.city_code_options)
         self.city_code_combo.grid(row=4, column=1, padx=5, pady=5)
 
+        ttk.Label(self.add_window, text="Тип контрагента").grid(row=5, column=0, padx=5, pady=5)
+        self.type_combo = ttk.Combobox(self.add_window, values=self.counterparty_types, state="readonly")
+        self.type_combo.grid(row=5, column=1, padx=5, pady=5)
+
         self.add_submit_button = ttk.Button(self.add_window, text="Добавить", command=self.submit_counterparty)
-        self.add_submit_button.grid(row=5, column=0, columnspan=2, pady=10)
+        self.add_submit_button.grid(row=6, column=0, columnspan=2, pady=10)
+
+    def update_city_code(self, event):
+        city = self.city_combo.get()
+        city_code = self.city_codes.get(city, "")
+        self.city_code_combo.set(city_code)
+
+    def validate_phone_number(self, phone_number):
+        return re.match(r'^[\d\+\-]*$', phone_number) is not None
 
     def submit_counterparty(self):
         appellation = self.appellation_entry.get()
-        city = self.city_entry.get()
+        city = self.city_combo.get()
         address = self.address_entry.get()
         phone_number = self.phone_number_entry.get()
         city_code = self.city_code_combo.get().split(' - ')[0] if ' - ' in self.city_code_combo.get() else self.city_code_combo.get()
+        counterparty_type = self.type_combo.get()
 
         # Проверка существования города и кода города
         existing_city_code = self.city_codes.get(city)
-        if existing_city_code:
-            if existing_city_code != city_code:
-                messagebox.showerror("Ошибка", "Выберите верный код города для существующего города")
-                return
-        else:
-            # Проверка на существование нового кода города
-            if city_code in self.city_codes.values():
-                messagebox.showerror("Ошибка", "Код города уже существует для другого города")
-                return
-            # Добавление нового города в таблицу cities
-            try:
-                connection = mysql.connector.connect(
-                    host='localhost',
-                    user='root',
-                    password='Sexy163123',
-                    database='counterparties1'
-                )
-                cursor = connection.cursor()
-                query = "INSERT INTO cities (city_code, city_name) VALUES (%s, %s)"
-                values = (city_code, city)
-                cursor.execute(query, values)
-                connection.commit()
-                cursor.close()
-                connection.close()
-                self.city_codes[city] = city_code  # Обновление словаря городов
-                self.city_code_options.append(f"{city_code} - {city}")  # Обновление списка для Combobox
-                self.city_code_combo['values'] = self.city_code_options  # Обновление значений Combobox
-            except mysql.connector.Error as err:
-                messagebox.showerror("Ошибка", f"Ошибка добавления города: {err}")
-                return
+        if not existing_city_code:
+            messagebox.showerror("Ошибка", "Пожалуйста, выберите город из предложенных, контрагенты могут находиться на данный момент только в предложенных городах, расширение пока не планируется.")
+            return
+        if existing_city_code != city_code:
+            messagebox.showerror("Ошибка", "Выберите верный код города для существующего города")
+            return
 
-        # Добавление контрагента
         try:
             connection = mysql.connector.connect(
                 host='localhost',
@@ -200,9 +221,18 @@ class App:
                 database='counterparties1'
             )
             cursor = connection.cursor()
+
+            # Добавление контрагента
             query = "INSERT INTO counterparties (appellation, city, address, phone_number, city_code) VALUES (%s, %s, %s, %s, %s)"
             values = (appellation, city, address, phone_number, city_code)
             cursor.execute(query, values)
+            new_serial_number = cursor.lastrowid  # Получение ID добавленного контрагента
+
+            # Добавление типа контрагента
+            query = "INSERT INTO types_of_counterparties (type_counterparty, serial_number) VALUES (%s, %s)"
+            values = (counterparty_type, new_serial_number)
+            cursor.execute(query, values)
+
             connection.commit()
             cursor.close()
             connection.close()
@@ -256,3 +286,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = App(root)
     root.mainloop()
+    
